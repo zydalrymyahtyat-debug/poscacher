@@ -1,0 +1,56 @@
+name: Build Optimized Android APK
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout the code
+      uses: actions/checkout@v4
+
+    # 1. إعداد الجافا مع تفعيل ميزة الكاش المتقدمة لـ Gradle
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: 'gradle' # يقوم بحفظ المكتبات تلقائياً لتقليل وقت البناء مستقبلاً
+
+    # 2. ميزة إضافية: كاش خاص بملفات البناء لتسريع الـ Compilation نفسه
+    - name: Cache Gradle Build Internals
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+          .gradle/configuration-cache
+          app/build
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/*.gradle.kts') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+
+    - name: Generate Gradle Wrapper
+      run: gradle wrapper
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x ./gradlew
+
+    - name: Generate Default Dummy Keystore
+      run: |
+        keytool -genkey -v -keystore my-dummy-key.jks -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "C=US, O=Android, CN=Android Debug"
+
+    - name: Build Optimized Release APK
+      run: ./gradlew assembleRelease -Pandroid.injected.signing.store.file=$GITHUB_WORKSPACE/my-dummy-key.jks -Pandroid.injected.signing.store.password=android -Pandroid.injected.signing.key.alias=androiddebugkey -Pandroid.injected.signing.key.password=android
+
+    - name: Upload Optimized APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-optimized-release-apk
+        path: app/build/outputs/apk/release/*.apk
